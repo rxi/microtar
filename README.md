@@ -16,7 +16,7 @@ char *p;
 /* Open archive for reading */
 mtar_open(&tar, "test.tar", "r");
 
-/* List and print all files and sizes */
+/* Print all file names and sizes */
 while ( (mtar_read_header(&tar, &h)) != MTAR_ENULLRECORD ) {
   printf("%s (%d bytes)\n", h.name, h.size);
   mtar_next(&tar);
