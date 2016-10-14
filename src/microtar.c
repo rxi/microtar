@@ -348,7 +348,7 @@ int mtar_write_dir_header(mtar_t *tar, const char *name) {
   memset(&h, 0, sizeof(h));
   strcpy(h.name, name);
   h.type = MTAR_TDIR;
-  h.mode = 0664;
+  h.mode = 0775;
   /* Write header */
   return mtar_write_header(tar, &h);
 }
