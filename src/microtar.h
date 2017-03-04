@@ -10,6 +10,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/file.h>
 
 #define MTAR_VERSION "0.1.0"
 
@@ -63,6 +66,7 @@ struct mtar_t {
 const char* mtar_strerror(int err);
 
 int mtar_open(mtar_t *tar, const char *filename, const char *mode);
+int mtar_fdopen(mtar_t *tar, int fd, const char *mode);
 int mtar_close(mtar_t *tar);
 
 int mtar_seek(mtar_t *tar, unsigned pos);
@@ -73,9 +77,15 @@ int mtar_read_header(mtar_t *tar, mtar_header_t *h);
 int mtar_read_data(mtar_t *tar, void *ptr, unsigned size);
 
 int mtar_write_header(mtar_t *tar, const mtar_header_t *h);
-int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size);
+int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size, const struct stat *st);
 int mtar_write_dir_header(mtar_t *tar, const char *name);
 int mtar_write_data(mtar_t *tar, const void *data, unsigned size);
+int mtar_write_file(mtar_t *tar, char *fname);
+int mtar_write_files(mtar_t *tar, char *pathname);
+
+int mtar_create(mtar_t *tar, char *dstfile, char *pathname, char *permissions);
+int mtar_create_fd(mtar_t *tar, int fd, char *pathname, char *permissions);
+
 int mtar_finalize(mtar_t *tar);
 
 
