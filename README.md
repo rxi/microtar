@@ -55,6 +55,12 @@ mtar_finalize(&tar);
 mtar_close(&tar);
 ```
 
+#### Tar creation
+```c
+mtar_t tar;
+mtar_create(&tar, "myarchive.tar", "/path/to/src", "wb");
+```
+
 
 ## Error handling
 All functions which return an `int` will return `MTAR_ESUCCESS` if the operation

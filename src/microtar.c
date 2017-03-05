@@ -24,6 +24,11 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+#include <fts.h>
+
 
 #include "microtar.h"
 
@@ -152,6 +157,10 @@ const char* mtar_strerror(int err) {
   return "unknown error";
 }
 
+int compare(const FTSENT** one, const FTSENT** two) {
+    return (strcmp((*one)->fts_name, (*two)->fts_name));
+}
+
 
 static int file_write(mtar_t *tar, const void *data, unsigned size) {
   unsigned res = fwrite(data, 1, size, tar->stream);
@@ -207,6 +216,40 @@ int mtar_open(mtar_t *tar, const char *filename, const char *mode) {
   return MTAR_ESUCCESS;
 }
 
+int mtar_fdopen(mtar_t *tar, int fd, const char *mode) {
+  int err;
+  mtar_header_t h;
+
+  /* Init tar struct and functions */
+  memset(tar, 0, sizeof(*tar));
+  tar->write = file_write;
+  tar->read = file_read;
+  tar->seek = file_seek;
+  tar->close = file_close;
+
+  /* Assure mode is always binary */
+  if ( strchr(mode, 'r') ) mode = "rb";
+  if ( strchr(mode, 'w') ) mode = "wb";
+  if ( strchr(mode, 'a') ) mode = "ab";
+  /* Open file */
+  tar->stream = fdopen(fd, mode);
+  if (!tar->stream) {
+    return MTAR_EOPENFAIL;
+  }
+  /* We have to set the stream as unbuffered since we're not closing it */
+  setbuf(tar->stream, NULL);
+  /* Read first header to check it is valid if mode is `r` */
+  if (*mode == 'r') {
+    err = mtar_read_header(tar, &h);
+    if (err != MTAR_ESUCCESS) {
+      mtar_close(tar);
+      return err;
+    }
+  }
+
+  /* Return ok */
+  return MTAR_ESUCCESS;
+}
 
 int mtar_close(mtar_t *tar) {
   return tar->close(tar);
@@ -329,14 +372,36 @@ int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
 }
 
 
-int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
+int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size, const struct stat *st) {
   mtar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
   strcpy(h.name, name);
   h.size = size;
-  h.type = MTAR_TREG;
-  h.mode = 0664;
+  if(S_ISREG(st->st_mode)) {
+    h.type = MTAR_TREG;
+  }
+  else if(S_ISDIR(st->st_mode)) {
+    h.type = MTAR_TDIR;
+  }
+  else if(S_ISLNK(st->st_mode)) {
+    h.type = MTAR_TSYM;
+    readlink(name, h.linkname, 100);
+  }
+  else if(S_ISBLK(st->st_mode)) {
+    h.type = MTAR_TBLK;
+  }
+  else if(S_ISDIR(st->st_mode)) {
+    h.type = MTAR_TDIR;
+  }
+  else if(S_ISCHR(st->st_mode)) {
+    h.type = MTAR_TCHR;
+  }
+  else if(S_ISFIFO(st->st_mode)) {
+    h.type = MTAR_TFIFO;
+  }
+  h.mode = st->st_mode;
+  h.mtime = st->st_mtime;
   /* Write header */
   return mtar_write_header(tar, &h);
 }
@@ -369,6 +434,78 @@ int mtar_write_data(mtar_t *tar, const void *data, unsigned size) {
   return MTAR_ESUCCESS;
 }
 
+int
+mtar_write_file(mtar_t *tar, char *fname) {
+	char buf[1024];
+	FILE *fp;
+	size_t nread;
+	unsigned size;
+	struct stat st;
+	int stret;
+	stret = lstat(fname, &st);
+	if(stret == 0) {
+		if(S_ISLNK(st.st_mode)) {
+			mtar_write_file_header(tar, fname, 0, &st);
+			return 0;
+		}
+		fp = fopen(fname, "rb");
+		if(fp) {
+			size = st.st_size;
+			mtar_write_file_header(tar, fname, size, &st);
+			while ((nread = fread(buf, 1, sizeof buf, fp)) > 0) {
+				mtar_write_data(tar, buf, nread);
+			}
+			return MTAR_ESUCCESS;
+		}
+		return MTAR_EREADFAIL;
+	}
+	return MTAR_ENOTFOUND;
+}
+
+int
+mtar_write_files(mtar_t *tar, char *pathname) {
+	char *tmp[2];
+	tmp[0] = pathname;
+	tmp[1] = NULL;
+	FTS* file_system = NULL;
+	FTSENT *node    = NULL;
+	file_system = fts_open(tmp,FTS_COMFOLLOW|FTS_NOCHDIR,&compare);
+	if (file_system != NULL) {
+		while( (node = fts_read(file_system)) != NULL) {
+			if(node->fts_info != FTS_D) {
+				mtar_write_file(tar, node->fts_path);
+			}
+		}
+		fts_close(file_system);
+		return MTAR_ESUCCESS;
+	}
+	return MTAR_ENOTFOUND;
+}
+
+int
+mtar_create_fd(mtar_t *tar, int fd, char *pathname, char *permissions) {
+  int ret;
+	ret = mtar_fdopen(tar, fd, permissions);
+  if(ret != MTAR_ESUCCESS)
+    return ret;
+	ret = mtar_write_files(tar, pathname);
+	mtar_finalize(tar);
+  /* We do not close the file descriptor, since it might be a socket that is still used after the call to our function */
+	//mtar_close(tar);
+  return ret;
+}
+
+int
+mtar_create(mtar_t *tar, char *dstfile, char *pathname, char *permissions) {
+  int ret;
+	ret = mtar_open(tar, dstfile, permissions);
+  if(ret != MTAR_ESUCCESS)
+    return ret;
+	ret = mtar_write_files(tar, pathname);
+	mtar_finalize(tar);
+	mtar_close(tar);
+  return ret;
+}
 
 int mtar_finalize(mtar_t *tar) {
   /* Write two NULL records */
