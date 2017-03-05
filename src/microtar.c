@@ -157,8 +157,7 @@ const char* mtar_strerror(int err) {
   return "unknown error";
 }
 
-int compare(const FTSENT** one, const FTSENT** two)
-{
+int compare(const FTSENT** one, const FTSENT** two) {
     return (strcmp((*one)->fts_name, (*two)->fts_name));
 }
 
@@ -436,29 +435,24 @@ int mtar_write_data(mtar_t *tar, const void *data, unsigned size) {
 }
 
 int
-mtar_write_file(mtar_t *tar, char *fname)
-{
+mtar_write_file(mtar_t *tar, char *fname) {
 	char buf[1024];
 	FILE *fp;
 	size_t nread;
 	unsigned size;
 	struct stat st;
 	int stret;
-
 	stret = lstat(fname, &st);
-	if(stret == 0)
-	{
-		if(S_ISLNK(st.st_mode)){
+	if(stret == 0) {
+		if(S_ISLNK(st.st_mode)) {
 			mtar_write_file_header(tar, fname, 0, &st);
 			return 0;
 		}
 		fp = fopen(fname, "rb");
-		if(fp)
-		{
+		if(fp) {
 			size = st.st_size;
 			mtar_write_file_header(tar, fname, size, &st);
-			while ((nread = fread(buf, 1, sizeof buf, fp)) > 0)
-			{
+			while ((nread = fread(buf, 1, sizeof buf, fp)) > 0) {
 				mtar_write_data(tar, buf, nread);
 			}
 			return MTAR_ESUCCESS;
@@ -475,27 +469,21 @@ mtar_write_files(mtar_t *tar, char *pathname) {
 	tmp[1] = NULL;
 	FTS* file_system = NULL;
 	FTSENT *node    = NULL;
-
 	file_system = fts_open(tmp,FTS_COMFOLLOW|FTS_NOCHDIR,&compare);
-
-	if (NULL != file_system)
-	{
-			while( (node = fts_read(file_system)) != NULL)
-			{
-				if(node->fts_info != FTS_D)
-				{
-					mtar_write_file(tar, node->fts_path);
-				}
+	if (file_system != NULL) {
+		while( (node = fts_read(file_system)) != NULL) {
+			if(node->fts_info != FTS_D) {
+				mtar_write_file(tar, node->fts_path);
 			}
-			fts_close(file_system);
-			return MTAR_ESUCCESS;
+		}
+		fts_close(file_system);
+		return MTAR_ESUCCESS;
 	}
 	return MTAR_ENOTFOUND;
 }
 
 int
-mtar_create_fd(mtar_t *tar, int fd, char *pathname, char *permissions)
-{
+mtar_create_fd(mtar_t *tar, int fd, char *pathname, char *permissions) {
   int ret;
 	ret = mtar_fdopen(tar, fd, permissions);
   if(ret != MTAR_ESUCCESS)
@@ -508,8 +496,7 @@ mtar_create_fd(mtar_t *tar, int fd, char *pathname, char *permissions)
 }
 
 int
-mtar_create(mtar_t *tar, char *dstfile, char *pathname, char *permissions)
-{
+mtar_create(mtar_t *tar, char *dstfile, char *pathname, char *permissions) {
   int ret;
 	ret = mtar_open(tar, dstfile, permissions);
   if(ret != MTAR_ESUCCESS)
