@@ -8,6 +8,11 @@
 #ifndef MICROTAR_H
 #define MICROTAR_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -78,5 +83,8 @@ int mtar_write_dir_header(mtar_t *tar, const char *name);
 int mtar_write_data(mtar_t *tar, const void *data, unsigned size);
 int mtar_finalize(mtar_t *tar);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif
