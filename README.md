@@ -6,9 +6,9 @@ A lightweight tar library written in ANSI C
 The library consists of `microtar.c` and `microtar.h`. These two files can be
 dropped into an existing project and compiled along with it.
 
-On POSIX-compliant systems (MacOS/BSD/Linux), an implementation using `mmap` 
-can be used via `microtar-mmap.c` and `microtar-mmap.h` 
-(you still need to include `microtar.c` and `microtar.h`). This can be 
+On POSIX-compliant systems (MacOS/BSD/Linux), an implementation using `mmap`
+can be used via `microtar-mmap.c` and `microtar-mmap.h`
+(you still need to include `microtar.c` and `microtar.h`). This can be
 faster for reads, as it greatly reduces the amount of copying.
 
 #### Reading
@@ -40,15 +40,25 @@ mtar_close(&tar);
 or, using the `mmap`-based implementation:
 
 ```c
- mtar_t tar;
- const char* str;
- /* Open the file and map its contents */
- mtar_open_mapped(&tar, "test.tar", "r");
- /* Get mapped pointer to "test.txt" */
- mtar_get_mapped(&tar, "test.txt", &str);
- /* Directly print contents */
- printf("%s", str);
- mtar_close(&tar);
+mtar_t tar;
+const char* str;
+mtar_header_t h;
+
+/* Print all file names and sizes */
+while ( (mtar_read_header(&tar, &h)) != MTAR_ENULLRECORD ) {
+  const char *data;
+  printf("%s (%d bytes)\n", h.name, h.size);
+  /* Get file pointer and bump to next header */
+  mtar_get_pointer(&tar, (const void**) &data);
+}
+
+/* Open the file and map its contents */
+mtar_open_mapped(&tar, "test.tar", "r");
+/* Get mapped pointer to "test.txt" */
+mtar_get_mapped(&tar, "test.txt", &str);
+/* Directly print contents */
+printf("%s", str);
+mtar_close(&tar);
 ```
 
 #### Writing

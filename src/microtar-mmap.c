@@ -20,9 +20,6 @@
  * IN THE SOFTWARE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stddef.h>
 #include <string.h>
 
 #include <sys/types.h>
@@ -65,6 +62,9 @@ static int file_read(mtar_t *tar, void *data, unsigned size) {
 
 static int file_seek(mtar_t *tar, unsigned offset) {
   tar->pos = offset;
+  if (tar->pos > ((struct mmap_info*) tar->stream)->size) {
+    return MTAR_ESEEKFAIL;
+  }
   return MTAR_ESUCCESS;
 }
 
@@ -94,7 +94,7 @@ int mtar_open_mapped(mtar_t *tar, const char *filename, const char *mode) {
   /* Open file */
   info = malloc(sizeof(struct mmap_info));
 
-  info->fd = open(filename, strchr(mode, 'r') != NULL ? O_RDONLY : O_RDWR);
+  info->fd = open(filename, *mode == 'r' ? O_RDONLY : O_RDWR);
   if (info->fd == -1) {
     mtar_close(tar);
     return MTAR_EOPENFAIL;
@@ -105,7 +105,7 @@ int mtar_open_mapped(mtar_t *tar, const char *filename, const char *mode) {
   info->data = mmap(
     NULL,
     st.st_size,
-    strchr(mode, 'w') != NULL
+    *mode == 'w'
       ? PROT_READ | PROT_WRITE
       : PROT_READ,
     MAP_SHARED,
@@ -129,7 +129,7 @@ int mtar_open_mapped(mtar_t *tar, const char *filename, const char *mode) {
 }
 
 
-int mtar_get_mapped(mtar_t *tar, const char* filename, const void** ptr) {
+int mtar_get_mapped(mtar_t *tar, const char* filename, const void **ptr) {
   int err;
   mtar_header_t h;
 
@@ -144,6 +144,13 @@ int mtar_get_mapped(mtar_t *tar, const char* filename, const void** ptr) {
     mtar_next(tar);
   }
   /* Return mapped file pointer */
+  *ptr = ((struct mmap_info*) tar->stream)->data + tar->pos;
+  return MTAR_ESUCCESS;
+}
+
+int mtar_get_pointer(mtar_t *tar, const void **ptr) {
+  tar->pos += sizeof(mtar_raw_header_t);
+  /* Return pointer to data after header */
   *ptr = ((struct mmap_info*) tar->stream)->data + tar->pos;
   return MTAR_ESUCCESS;
 }
