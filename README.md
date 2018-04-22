@@ -41,8 +41,11 @@ or, using the `mmap`-based implementation:
 
 ```c
 mtar_t tar;
-const char* str;
+const char *str;
 mtar_header_t h;
+
+/* Open the file and map its contents */
+mtar_open_mapped(&tar, "test.tar");
 
 /* Print all file names and sizes */
 while ( (mtar_read_header(&tar, &h)) != MTAR_ENULLRECORD ) {
@@ -52,8 +55,6 @@ while ( (mtar_read_header(&tar, &h)) != MTAR_ENULLRECORD ) {
   mtar_get_pointer(&tar, (const void**) &data);
 }
 
-/* Open the file and map its contents */
-mtar_open_mapped(&tar, "test.tar", "r");
 /* Get mapped pointer to "test.txt" */
 mtar_get_mapped(&tar, "test.txt", &str);
 /* Directly print contents */

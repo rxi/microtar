@@ -78,7 +78,7 @@ static int file_close(mtar_t *tar) {
 }
 
 
-int mtar_open_mapped(mtar_t *tar, const char *filename, const char *mode) {
+int mtar_open_mapped(mtar_t *tar, const char *filename) {
   int err;
   mtar_header_t h;
   struct stat st;
@@ -94,7 +94,7 @@ int mtar_open_mapped(mtar_t *tar, const char *filename, const char *mode) {
   /* Open file */
   info = malloc(sizeof(struct mmap_info));
 
-  info->fd = open(filename, *mode == 'r' ? O_RDONLY : O_RDWR);
+  info->fd = open(filename, O_RDONLY);
   if (info->fd == -1) {
     mtar_close(tar);
     return MTAR_EOPENFAIL;
@@ -105,9 +105,7 @@ int mtar_open_mapped(mtar_t *tar, const char *filename, const char *mode) {
   info->data = mmap(
     NULL,
     st.st_size,
-    *mode == 'w'
-      ? PROT_READ | PROT_WRITE
-      : PROT_READ,
+    PROT_READ,
     MAP_SHARED,
     info->fd,
     0
@@ -115,14 +113,12 @@ int mtar_open_mapped(mtar_t *tar, const char *filename, const char *mode) {
   info->size = st.st_size;
   tar->stream = info;
   /* Read first header to check it is valid if mode is `r` */
-  if (*mode == 'r') {
-    err = mtar_read_header(tar, &h);
-    if (err != MTAR_ESUCCESS) {
-      mtar_close(tar);
-      return err;
-    }
-    mtar_rewind(tar);
+  err = mtar_read_header(tar, &h);
+  if (err != MTAR_ESUCCESS) {
+    mtar_close(tar);
+    return err;
   }
+  mtar_rewind(tar);
 
   /* Return ok */
   return MTAR_ESUCCESS;

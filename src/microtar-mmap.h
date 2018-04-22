@@ -13,7 +13,7 @@ extern "C"
 {
 #endif
 
-int mtar_open_mapped(mtar_t *tar, const char *filename, const char *mode);
+int mtar_open_mapped(mtar_t *tar, const char *filename);
 int mtar_get_mapped(mtar_t *tar, const char *filename, const void **data);
 int mtar_get_pointer(mtar_t *tar, const void **ptr);
 
