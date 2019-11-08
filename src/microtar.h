@@ -17,6 +17,7 @@ extern "C"
 #include <stdlib.h>
 
 #define MTAR_VERSION "0.1.0"
+#define MTAR_NULL_BLOCKSIZE 16
 
 enum {
   MTAR_ESUCCESS     =  0,

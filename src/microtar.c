@@ -76,12 +76,14 @@ static int twrite(mtar_t *tar, const void *data, unsigned size) {
 
 static int write_null_bytes(mtar_t *tar, int n) {
   int i, err;
-  char nul = '\0';
-  for (i = 0; i < n; i++) {
-    err = twrite(tar, &nul, 1);
+  char nul[MTAR_NULL_BLOCKSIZE];
+  memset(nul, 0, sizeof(nul));
+  while (n > 0) {
+    err = twrite(tar, &nul, n > MTAR_NULL_BLOCKSIZE ? MTAR_NULL_BLOCKSIZE : n);
     if (err) {
       return err;
     }
+    n -= MTAR_NULL_BLOCKSIZE;
   }
   return MTAR_ESUCCESS;
 }
