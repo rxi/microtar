@@ -219,6 +219,14 @@ static int mem_close(mtar_t *tar) {
 }
 
 
+int mtar_init_mem_stream(mtar_mem_stream_t *mem, void *buff, size_t size)
+{
+	mem->data = buff;
+	mem->size = size;
+	mem->pos = 0;
+}
+
+
 int mtar_open_mem(mtar_t *tar, mtar_mem_stream_t *mem) {
   int err;
   mtar_header_t h;
