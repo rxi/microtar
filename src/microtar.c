@@ -76,12 +76,14 @@ static int twrite(mtar_t *tar, const void *data, unsigned size) {
 
 static int write_null_bytes(mtar_t *tar, int n) {
   int i, err;
-  char nul = '\0';
-  for (i = 0; i < n; i++) {
-    err = twrite(tar, &nul, 1);
+  char nul[MTAR_NULL_BLOCKSIZE];
+  memset(nul, 0, sizeof(nul));
+  while (n > 0) {
+    err = twrite(tar, &nul, n > MTAR_NULL_BLOCKSIZE ? MTAR_NULL_BLOCKSIZE : n);
     if (err) {
       return err;
     }
+    n -= MTAR_NULL_BLOCKSIZE;
   }
   return MTAR_ESUCCESS;
 }
@@ -170,6 +172,77 @@ static int file_seek(mtar_t *tar, unsigned offset) {
 
 static int file_close(mtar_t *tar) {
   fclose(tar->stream);
+  return MTAR_ESUCCESS;
+}
+
+static int mem_write(mtar_t *tar, const void *data, unsigned size) {
+  mtar_mem_stream_t *mem = tar->stream;
+
+  if(!mem || mem->pos + size >= mem->size) {
+    return MTAR_EWRITEFAIL;
+  }
+
+  memcpy(mem->data + mem->pos, data, size);
+  mem->pos += size;
+
+  return MTAR_ESUCCESS;
+}
+
+static int mem_read(mtar_t *tar, void *data, unsigned size) {
+  mtar_mem_stream_t *mem = tar->stream;
+
+  if(!mem || mem->pos + size >= mem->size) {
+    return MTAR_EREADFAIL;
+  }
+
+  memcpy(data, mem->data + mem->pos, size);
+  mem->pos += size;
+
+  return MTAR_ESUCCESS;
+}
+
+static int mem_seek(mtar_t *tar, unsigned offset) {
+  mtar_mem_stream_t *mem = tar->stream;
+
+  if(!mem || offset >= mem->size)
+    return MTAR_ESEEKFAIL;
+
+  mem->pos = offset;
+
+  return MTAR_ESUCCESS;
+}
+
+static int mem_close(mtar_t *tar) {
+  tar->stream = NULL;
+
+  return MTAR_ESUCCESS;
+}
+
+
+int mtar_init_mem_stream(mtar_mem_stream_t *mem, void *buff, size_t size)
+{
+	mem->data = buff;
+	mem->size = size;
+	mem->pos = 0;
+}
+
+
+int mtar_open_mem(mtar_t *tar, mtar_mem_stream_t *mem) {
+  int err;
+  mtar_header_t h;
+
+  if ( !mem || !mem->data || !mem->size ) {
+    return MTAR_EOPENFAIL;
+  }
+
+  memset(tar, 0, sizeof(*tar));
+  tar->write = mem_write;
+  tar->read = mem_read;
+  tar->seek = mem_seek;
+  tar->close = mem_close;
+
+  tar->stream = mem;
+
   return MTAR_ESUCCESS;
 }
 
