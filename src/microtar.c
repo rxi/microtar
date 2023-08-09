@@ -224,6 +224,7 @@ int mtar_init_mem_stream(mtar_mem_stream_t *mem, void *buff, size_t size)
 	mem->data = buff;
 	mem->size = size;
 	mem->pos = 0;
+	return MTAR_ESUCCESS;
 }
 
 
