@@ -322,6 +322,9 @@ int mtar_read_data(mtar_t *tar, void *ptr, unsigned size) {
 
 int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
   mtar_raw_header_t rh;
+  /* If name exceeds buffer length, return error */
+  if(strlen(h->name) > 99 || strlen(h->linkname) > 99)
+    return MTAR_EFAILURE;
   /* Build raw header and write */
   header_to_raw(&rh, h);
   tar->remaining_data = h->size;
@@ -331,6 +334,9 @@ int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
 
 int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
   mtar_header_t h;
+  /* If name exceeds buffer length, return error */
+  if(strlen(name) > 99)
+    return MTAR_EFAILURE;
   /* Build header */
   memset(&h, 0, sizeof(h));
   strcpy(h.name, name);
@@ -344,6 +350,9 @@ int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
 
 int mtar_write_dir_header(mtar_t *tar, const char *name) {
   mtar_header_t h;
+  /* If name exceeds buffer length, return error */
+  if(strlen(name) > 99)
+    return MTAR_EFAILURE;
   /* Build header */
   memset(&h, 0, sizeof(h));
   strcpy(h.name, name);
