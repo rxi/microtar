@@ -173,8 +173,10 @@ static int file_seek(mtar_t *tar, unsigned offset) {
 }
 
 static int file_close(mtar_t *tar) {
-  if (tar->stream != NULL)
+  if (tar->stream != NULL){
     fclose(tar->stream);
+    tar->stream = NULL;
+  }
   return MTAR_ESUCCESS;
 }
 
