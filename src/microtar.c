@@ -107,6 +107,10 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   sscanf(rh->owner, "%o", &h->owner);
   sscanf(rh->size, "%o", &h->size);
   sscanf(rh->mtime, "%o", &h->mtime);
+  
+  if (h->size > 99)
+    return MTAR_EFAILURE;
+  
   h->type = rh->type;
   strcpy(h->name, rh->name);
   strcpy(h->linkname, rh->linkname);
@@ -169,7 +173,8 @@ static int file_seek(mtar_t *tar, unsigned offset) {
 }
 
 static int file_close(mtar_t *tar) {
-  fclose(tar->stream);
+  if (tar->stream != NULL)
+    fclose(tar->stream);
   return MTAR_ESUCCESS;
 }
 
