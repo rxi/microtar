@@ -106,12 +106,12 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   sscanf(rh->owner, "%o", &h->owner);
   sscanf(rh->size, "%o", &h->size);
   sscanf(rh->mtime, "%o", &h->mtime);
+  h->type = rh->type;
 
   /* If name or linkname exceeds buffer length, return error */
-  if(strlen(rh->name) > MTAR_BUFLEN - 1 || strlen(rh->linkname) > MTAR_BUFLEN - 1)
+  if(strlen(rh->name) > MTAR_BUFLEN - 1 || strlen(rh->linkname) > MTAR_BUFLEN - 1 || h->type == 'L')
     return MTAR_EBUFOVERFLOW;
-  
-  h->type = rh->type;
+
   strcpy(h->name, rh->name);
   strcpy(h->linkname, rh->linkname);
 
