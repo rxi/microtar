@@ -39,7 +39,8 @@ enum {
   MTAR_TCHR   = '3',
   MTAR_TBLK   = '4',
   MTAR_TDIR   = '5',
-  MTAR_TFIFO  = '6'
+  MTAR_TFIFO  = '6',
+  MTAR_TLLNK  = 'L'
 };
 
 typedef struct {

@@ -109,7 +109,7 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   h->type = rh->type;
 
   /* If name or linkname exceeds buffer length, return error */
-  if(strlen(rh->name) > MTAR_BUFLEN - 1 || strlen(rh->linkname) > MTAR_BUFLEN - 1 || h->type == 'L')
+  if(strlen(rh->name) >= MTAR_BUFLEN || strlen(rh->linkname) >= MTAR_BUFLEN || h->type == MTAR_TLLNK)
     return MTAR_EBUFOVERFLOW;
 
   strcpy(h->name, rh->name);
