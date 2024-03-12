@@ -27,11 +27,9 @@
 
 #include "microtar.h"
 
-static const size_t name_buf_width = 100;
-static const size_t linkname_buf_width = 100;
 
 typedef struct {
-  char name[name_buf_width];
+  char name[100];
   char mode[8];
   char owner[8];
   char group[8];
@@ -39,7 +37,7 @@ typedef struct {
   char mtime[12];
   char checksum[8];
   char type;
-  char linkname[linkname_buf_width];
+  char linkname[100];
   char _padding[255];
 } mtar_raw_header_t;
 
@@ -124,8 +122,8 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   h->type = rh->type;
   
   // Here we can memcpy because both buffers have the same size
-  memcpy(h->name, rh->name, name_buf_width);
-  memcpy(h->linkname, rh->linkname, linkname_buf_width);
+  memcpy(h->name, rh->name, 100);
+  memcpy(h->linkname, rh->linkname, 100);
 
   return MTAR_ESUCCESS;
 }
@@ -141,8 +139,8 @@ static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   snprintf(rh->size, 12, "%o", h->size);
   snprintf(rh->mtime, 12, "%o", h->mtime);
   rh->type = h->type ? h->type : MTAR_TREG;
-  memcpy(rh->name, h->name, name_buf_width);
-  memcpy(rh->linkname, h->linkname, name_buf_width);
+  memcpy(rh->name, h->name, 100);
+  memcpy(rh->linkname, h->linkname, 100);
 
   /* Calculate and write checksum */
   chksum = checksum(rh);
@@ -349,7 +347,7 @@ int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
   mtar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
-  guarded_strcpy(h.name, name, name_buf_width);
+  guarded_strcpy(h.name, name, 100);
   h.size = size;
   h.type = MTAR_TREG;
   h.mode = 0664;
@@ -362,7 +360,7 @@ int mtar_write_dir_header(mtar_t *tar, const char *name) {
   mtar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
-  guarded_strcpy(h.name, name, name_buf_width);
+  guarded_strcpy(h.name, name, 100);
   h.type = MTAR_TDIR;
   h.mode = 0775;
   /* Write header */
