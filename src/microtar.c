@@ -27,8 +27,11 @@
 
 #include "microtar.h"
 
+static const size_t name_buf_width = 100;
+static const size_t linkname_buf_width = 100;
+
 typedef struct {
-  char name[100];
+  char name[name_buf_width];
   char mode[8];
   char owner[8];
   char group[8];
@@ -36,9 +39,20 @@ typedef struct {
   char mtime[12];
   char checksum[8];
   char type;
-  char linkname[100];
+  char linkname[linkname_buf_width];
   char _padding[255];
 } mtar_raw_header_t;
+
+
+static void guarded_strcpy(char* dest, const char* source, size_t buf_width) {
+  size_t len = strlen(source);
+  // >= to account for the null terminator
+  if (source >= buf_width) {
+    printf("microtar does not support filenames longer than 99 characters\n");
+    abort();
+  }
+  memcpy(dest, source, len);
+}
 
 
 static unsigned round_up(unsigned n, unsigned incr) {
@@ -97,19 +111,21 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
 
   /* Build and compare checksum */
   chksum1 = checksum(rh);
-  sscanf(rh->checksum, "%o", &chksum2);
+  sscanf(rh->checksum, "%8o", &chksum2);
   if (chksum1 != chksum2) {
     return MTAR_EBADCHKSUM;
   }
 
   /* Load raw header into header */
-  sscanf(rh->mode, "%o", &h->mode);
-  sscanf(rh->owner, "%o", &h->owner);
-  sscanf(rh->size, "%o", &h->size);
-  sscanf(rh->mtime, "%o", &h->mtime);
+  sscanf(rh->mode, "%8o", &h->mode);
+  sscanf(rh->owner, "%8o", &h->owner);
+  sscanf(rh->size, "%12o", &h->size);
+  sscanf(rh->mtime, "%12o", &h->mtime);
   h->type = rh->type;
-  strcpy(h->name, rh->name);
-  strcpy(h->linkname, rh->linkname);
+  
+  // Here we can memcpy because both buffers have the same size
+  memcpy(h->name, rh->name, name_buf_width);
+  memcpy(h->linkname, rh->linkname, linkname_buf_width);
 
   return MTAR_ESUCCESS;
 }
@@ -120,17 +136,17 @@ static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
 
   /* Load header into raw header */
   memset(rh, 0, sizeof(*rh));
-  sprintf(rh->mode, "%o", h->mode);
-  sprintf(rh->owner, "%o", h->owner);
-  sprintf(rh->size, "%o", h->size);
-  sprintf(rh->mtime, "%o", h->mtime);
+  snprintf(rh->mode, 8, "%o", h->mode);
+  snprintf(rh->owner, 8, "%o", h->owner);
+  snprintf(rh->size, 12, "%o", h->size);
+  snprintf(rh->mtime, 12, "%o", h->mtime);
   rh->type = h->type ? h->type : MTAR_TREG;
-  strcpy(rh->name, h->name);
-  strcpy(rh->linkname, h->linkname);
+  memcpy(rh->name, h->name, name_buf_width);
+  memcpy(rh->linkname, h->linkname, name_buf_width);
 
   /* Calculate and write checksum */
   chksum = checksum(rh);
-  sprintf(rh->checksum, "%06o", chksum);
+  snprintf(rh->checksum, 8, "%06o", chksum);
   rh->checksum[7] = ' ';
 
   return MTAR_ESUCCESS;
@@ -333,7 +349,7 @@ int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
   mtar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
-  strcpy(h.name, name);
+  guarded_strcpy(h.name, name, name_buf_width);
   h.size = size;
   h.type = MTAR_TREG;
   h.mode = 0664;
@@ -346,7 +362,7 @@ int mtar_write_dir_header(mtar_t *tar, const char *name) {
   mtar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
-  strcpy(h.name, name);
+  guarded_strcpy(h.name, name, name_buf_width);
   h.type = MTAR_TDIR;
   h.mode = 0775;
   /* Write header */
