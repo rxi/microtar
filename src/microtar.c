@@ -47,7 +47,7 @@ typedef struct {
 static void guarded_strcpy(char* dest, const char* source, size_t buf_width) {
   size_t len = strlen(source);
   // >= to account for the null terminator
-  if (source >= buf_width) {
+  if (len >= buf_width) {
     printf("microtar does not support filenames longer than 99 characters\n");
     abort();
   }
