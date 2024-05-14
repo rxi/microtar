@@ -37,7 +37,10 @@ typedef struct {
   char checksum[8];
   char type;
   char linkname[100];
-  char _padding[255];
+  char magic[6];
+  char _unused[82];
+  char prefix[155];
+  char _padding[12];
 } mtar_raw_header_t;
 
 
@@ -108,7 +111,11 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   sscanf(rh->size, "%o", &h->size);
   sscanf(rh->mtime, "%o", &h->mtime);
   h->type = rh->type;
-  strcpy(h->name, rh->name);
+  h->name[0] = '\0';
+  if (0 == strcmp(rh->magic, "ustar")) {
+    strcpy(strcpy(h->name, rh->prefix), "/");
+  }
+  strcat(h->name, rh->name);
   strcpy(h->linkname, rh->linkname);
 
   return MTAR_ESUCCESS;
@@ -117,6 +124,7 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
 
 static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   unsigned chksum;
+  char *rest;
 
   /* Load header into raw header */
   memset(rh, 0, sizeof(*rh));
@@ -125,7 +133,25 @@ static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   sprintf(rh->size, "%o", h->size);
   sprintf(rh->mtime, "%o", h->mtime);
   rh->type = h->type ? h->type : MTAR_TREG;
-  strcpy(rh->name, h->name);
+  if (strlen(h->name) < 100) {
+    strcpy(rh->name, h->name);
+  } else {
+    rest = h->name;
+    while (rest = strchr(rest, '/')) {
+      ++rest;
+      if (strlen(rest) < 100) {
+        break;
+      }
+    }
+
+    if (rest) {
+      strcpy(rh->magic, "ustar");
+      memcpy(rh->prefix, h->name, (int)(rest - h->name - 1));
+      strcpy(rh->name, rest);
+    } else {
+      return MTAR_ENAME;
+    }
+  }
   strcpy(rh->linkname, h->linkname);
 
   /* Calculate and write checksum */
@@ -148,6 +174,7 @@ const char* mtar_strerror(int err) {
     case MTAR_EBADCHKSUM   : return "bad checksum";
     case MTAR_ENULLRECORD  : return "null record";
     case MTAR_ENOTFOUND    : return "file not found";
+    case MTAR_ENAME        : return "bad file name (99 characters of file name + 155 characters of prefix";
   }
   return "unknown error";
 }
@@ -322,8 +349,10 @@ int mtar_read_data(mtar_t *tar, void *ptr, unsigned size) {
 
 int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
   mtar_raw_header_t rh;
+  int err;
   /* Build raw header and write */
-  header_to_raw(&rh, h);
+  if (err = header_to_raw(&rh, h))
+    return err;
   tar->remaining_data = h->size;
   return twrite(tar, &rh, sizeof(rh));
 }
@@ -333,6 +362,8 @@ int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
   mtar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
+  if (strlen(name) > 255)
+    return MTAR_ENAME;
   strcpy(h.name, name);
   h.size = size;
   h.type = MTAR_TREG;

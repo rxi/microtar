@@ -27,7 +27,8 @@ enum {
   MTAR_ESEEKFAIL    = -5,
   MTAR_EBADCHKSUM   = -6,
   MTAR_ENULLRECORD  = -7,
-  MTAR_ENOTFOUND    = -8
+  MTAR_ENOTFOUND    = -8,
+  MTAR_ENAME = -9
 };
 
 enum {
@@ -46,7 +47,7 @@ typedef struct {
   unsigned size;
   unsigned mtime;
   unsigned type;
-  char name[100];
+  char name[256];
   char linkname[100];
 } mtar_header_t;
 
