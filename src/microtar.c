@@ -102,6 +102,19 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
     return MTAR_EBADCHKSUM;
   }
 
+  /* The name and linkname fields are not guaranteed to be NUL-terminated:
+   * the ustar format allows them to use all 100 bytes with no terminator
+   * at all. Copying such a field with strcpy() needs 101 bytes in the
+   * destination and overruns h->name / h->linkname (and, since linkname
+   * is the last member of mtar_header_t, corrupts whatever memory follows
+   * the struct). Reject headers like that instead of overflowing. */
+  if (memchr(rh->name, '\0', sizeof(rh->name)) == NULL) {
+    return MTAR_EFAILURE;
+  }
+  if (memchr(rh->linkname, '\0', sizeof(rh->linkname)) == NULL) {
+    return MTAR_EFAILURE;
+  }
+
   /* Load raw header into header */
   sscanf(rh->mode, "%o", &h->mode);
   sscanf(rh->owner, "%o", &h->owner);
