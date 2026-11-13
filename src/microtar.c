@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <limits.h>
 
 #include "microtar.h"
 
@@ -87,6 +88,32 @@ static int write_null_bytes(mtar_t *tar, int n) {
 }
 
 
+/* A header field may lack a NUL (CVE-2026-43623, CVE-2026-55738), so every
+ * field is read within its length. */
+/* Returns the number of digits read, or -1 on overflow. */
+static int parse_octal(const char *field, unsigned len, unsigned *value) {
+  unsigned i = 0;
+  int digits = 0;
+  *value = 0;
+  while (i < len && field[i] == ' ') {
+    i++;
+  }
+  for (; i < len && field[i] >= '0' && field[i] <= '7'; i++, digits++) {
+    if (*value > (UINT_MAX >> 3)) {
+      return -1;
+    }
+    *value = (*value << 3) | (unsigned) (field[i] - '0');
+  }
+  return digits;
+}
+
+
+static void copy_name(char *dst, const char *field) {
+  memcpy(dst, field, 100);
+  dst[100] = '\0';
+}
+
+
 static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   unsigned chksum1, chksum2;
 
@@ -97,26 +124,38 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
 
   /* Build and compare checksum */
   chksum1 = checksum(rh);
-  sscanf(rh->checksum, "%o", &chksum2);
-  if (chksum1 != chksum2) {
+  if (parse_octal(rh->checksum, sizeof(rh->checksum), &chksum2) <= 0 || chksum1 != chksum2) {
     return MTAR_EBADCHKSUM;
   }
 
   /* Load raw header into header */
-  sscanf(rh->mode, "%o", &h->mode);
-  sscanf(rh->owner, "%o", &h->owner);
-  sscanf(rh->size, "%o", &h->size);
-  sscanf(rh->mtime, "%o", &h->mtime);
+  if (parse_octal(rh->mode, sizeof(rh->mode), &h->mode) < 0 ||
+      parse_octal(rh->owner, sizeof(rh->owner), &h->owner) < 0 ||
+      parse_octal(rh->size, sizeof(rh->size), &h->size) < 0 ||
+      parse_octal(rh->mtime, sizeof(rh->mtime), &h->mtime) < 0) {
+    return MTAR_EBADHEADER;
+  }
   h->type = rh->type;
-  strcpy(h->name, rh->name);
-  strcpy(h->linkname, rh->linkname);
+  copy_name(h->name, rh->name);
+  copy_name(h->linkname, rh->linkname);
 
   return MTAR_ESUCCESS;
 }
 
 
+static int name_fits(const char *name) {
+  return memchr(name, '\0', 101) != NULL;
+}
+
+
 static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   unsigned chksum;
+
+  /* Every field must fit the raw header (CVE-2026-71267, #31, #32). */
+  if (h->mode > 07777777 || h->owner > 07777777 ||
+      !name_fits(h->name) || !name_fits(h->linkname)) {
+    return MTAR_EFAILURE;
+  }
 
   /* Load header into raw header */
   memset(rh, 0, sizeof(*rh));
@@ -125,8 +164,8 @@ static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   sprintf(rh->size, "%o", h->size);
   sprintf(rh->mtime, "%o", h->mtime);
   rh->type = h->type ? h->type : MTAR_TREG;
-  strcpy(rh->name, h->name);
-  strcpy(rh->linkname, h->linkname);
+  memcpy(rh->name, h->name, strlen(h->name));
+  memcpy(rh->linkname, h->linkname, strlen(h->linkname));
 
   /* Calculate and write checksum */
   chksum = checksum(rh);
@@ -148,6 +187,7 @@ const char* mtar_strerror(int err) {
     case MTAR_EBADCHKSUM   : return "bad checksum";
     case MTAR_ENULLRECORD  : return "null record";
     case MTAR_ENOTFOUND    : return "file not found";
+    case MTAR_EBADHEADER   : return "bad header";
   }
   return "unknown error";
 }
@@ -228,15 +268,23 @@ int mtar_rewind(mtar_t *tar) {
 
 
 int mtar_next(mtar_t *tar) {
-  int err, n;
+  int err;
+  unsigned n;
   mtar_header_t h;
   /* Load header */
   err = mtar_read_header(tar, &h);
   if (err) {
     return err;
   }
-  /* Seek to next record */
+  /* Reject a size or offset that wraps (CVE-2026-54417). */
+  if (h.size > UINT_MAX - 1023) {
+    return MTAR_EBADHEADER;
+  }
   n = round_up(h.size, 512) + sizeof(mtar_raw_header_t);
+  if (tar->pos > UINT_MAX - n) {
+    return MTAR_EBADHEADER;
+  }
+  /* Seek to next record */
   return mtar_seek(tar, tar->pos + n);
 }
 
@@ -257,7 +305,10 @@ int mtar_find(mtar_t *tar, const char *name, mtar_header_t *h) {
       }
       return MTAR_ESUCCESS;
     }
-    mtar_next(tar);
+    err = mtar_next(tar);
+    if (err) {
+      return err;
+    }
   }
   /* Return error */
   if (err == MTAR_ENULLRECORD) {
@@ -323,7 +374,10 @@ int mtar_read_data(mtar_t *tar, void *ptr, unsigned size) {
 int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
   mtar_raw_header_t rh;
   /* Build raw header and write */
-  header_to_raw(&rh, h);
+  int err = header_to_raw(&rh, h);
+  if (err) {
+    return err;
+  }
   tar->remaining_data = h->size;
   return twrite(tar, &rh, sizeof(rh));
 }
@@ -331,6 +385,9 @@ int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
 
 int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
   mtar_header_t h;
+  if (strlen(name) >= sizeof(h.name)) {
+    return MTAR_EFAILURE;
+  }
   /* Build header */
   memset(&h, 0, sizeof(h));
   strcpy(h.name, name);
@@ -344,6 +401,9 @@ int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
 
 int mtar_write_dir_header(mtar_t *tar, const char *name) {
   mtar_header_t h;
+  if (strlen(name) >= sizeof(h.name)) {
+    return MTAR_EFAILURE;
+  }
   /* Build header */
   memset(&h, 0, sizeof(h));
   strcpy(h.name, name);
