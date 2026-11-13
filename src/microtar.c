@@ -268,15 +268,23 @@ int mtar_rewind(mtar_t *tar) {
 
 
 int mtar_next(mtar_t *tar) {
-  int err, n;
+  int err;
+  unsigned n;
   mtar_header_t h;
   /* Load header */
   err = mtar_read_header(tar, &h);
   if (err) {
     return err;
   }
-  /* Seek to next record */
+  /* Reject a size or offset that wraps (CVE-2026-54417). */
+  if (h.size > UINT_MAX - 1023) {
+    return MTAR_EBADHEADER;
+  }
   n = round_up(h.size, 512) + sizeof(mtar_raw_header_t);
+  if (tar->pos > UINT_MAX - n) {
+    return MTAR_EBADHEADER;
+  }
+  /* Seek to next record */
   return mtar_seek(tar, tar->pos + n);
 }
 
@@ -297,7 +305,10 @@ int mtar_find(mtar_t *tar, const char *name, mtar_header_t *h) {
       }
       return MTAR_ESUCCESS;
     }
-    mtar_next(tar);
+    err = mtar_next(tar);
+    if (err) {
+      return err;
+    }
   }
   /* Return error */
   if (err == MTAR_ENULLRECORD) {
