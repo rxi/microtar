@@ -143,8 +143,19 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
 }
 
 
+static int name_fits(const char *name) {
+  return memchr(name, '\0', 101) != NULL;
+}
+
+
 static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   unsigned chksum;
+
+  /* Every field must fit the raw header (CVE-2026-71267, #31, #32). */
+  if (h->mode > 07777777 || h->owner > 07777777 ||
+      !name_fits(h->name) || !name_fits(h->linkname)) {
+    return MTAR_EFAILURE;
+  }
 
   /* Load header into raw header */
   memset(rh, 0, sizeof(*rh));
@@ -153,8 +164,8 @@ static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   sprintf(rh->size, "%o", h->size);
   sprintf(rh->mtime, "%o", h->mtime);
   rh->type = h->type ? h->type : MTAR_TREG;
-  strcpy(rh->name, h->name);
-  strcpy(rh->linkname, h->linkname);
+  memcpy(rh->name, h->name, strlen(h->name));
+  memcpy(rh->linkname, h->linkname, strlen(h->linkname));
 
   /* Calculate and write checksum */
   chksum = checksum(rh);
@@ -352,7 +363,10 @@ int mtar_read_data(mtar_t *tar, void *ptr, unsigned size) {
 int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
   mtar_raw_header_t rh;
   /* Build raw header and write */
-  header_to_raw(&rh, h);
+  int err = header_to_raw(&rh, h);
+  if (err) {
+    return err;
+  }
   tar->remaining_data = h->size;
   return twrite(tar, &rh, sizeof(rh));
 }
@@ -360,6 +374,9 @@ int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
 
 int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
   mtar_header_t h;
+  if (strlen(name) >= sizeof(h.name)) {
+    return MTAR_EFAILURE;
+  }
   /* Build header */
   memset(&h, 0, sizeof(h));
   strcpy(h.name, name);
@@ -373,6 +390,9 @@ int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
 
 int mtar_write_dir_header(mtar_t *tar, const char *name) {
   mtar_header_t h;
+  if (strlen(name) >= sizeof(h.name)) {
+    return MTAR_EFAILURE;
+  }
   /* Build header */
   memset(&h, 0, sizeof(h));
   strcpy(h.name, name);
