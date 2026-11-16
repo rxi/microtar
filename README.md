@@ -12,22 +12,33 @@ dropped into an existing project and compiled along with it.
 mtar_t tar;
 mtar_header_t h;
 char *p;
+int err;
 
 /* Open archive for reading */
-mtar_open(&tar, "test.tar", "r");
+if ( mtar_open(&tar, "test.tar", "r") != MTAR_ESUCCESS ) {
+  return;
+}
 
 /* Print all file names and sizes */
-while ( (mtar_read_header(&tar, &h)) != MTAR_ENULLRECORD ) {
-  printf("%s (%d bytes)\n", h.name, h.size);
-  mtar_next(&tar);
+while ( (err = mtar_read_header(&tar, &h)) == MTAR_ESUCCESS ) {
+  printf("%s (%u bytes)\n", h.name, h.size);
+  /* Stop on any error: mtar_next() does not move past a bad header (CVE-2026-54417) */
+  if ( (err = mtar_next(&tar)) != MTAR_ESUCCESS ) {
+    break;
+  }
+}
+if ( err != MTAR_ENULLRECORD ) {
+  printf("error: %s\n", mtar_strerror(err));
 }
 
 /* Load and print contents of file "test.txt" */
-mtar_find(&tar, "test.txt", &h);
-p = calloc(1, h.size + 1);
-mtar_read_data(&tar, p, h.size);
-printf("%s", p);
-free(p);
+if ( mtar_find(&tar, "test.txt", &h) == MTAR_ESUCCESS ) {
+  p = calloc(1, (size_t) h.size + 1);
+  if ( p && mtar_read_data(&tar, p, h.size) == MTAR_ESUCCESS ) {
+    printf("%s", p);
+  }
+  free(p);
+}
 
 /* Close archive */
 mtar_close(&tar);
@@ -40,16 +51,19 @@ const char *str1 = "Hello world";
 const char *str2 = "Goodbye world";
 
 /* Open archive for writing */
-mtar_open(&tar, "test.tar", "w");
+if ( mtar_open(&tar, "test.tar", "w") != MTAR_ESUCCESS ) {
+  return;
+}
 
-/* Write strings to files `test1.txt` and `test2.txt` */
-mtar_write_file_header(&tar, "test1.txt", strlen(str1));
-mtar_write_data(&tar, str1, strlen(str1));
-mtar_write_file_header(&tar, "test2.txt", strlen(str2));
-mtar_write_data(&tar, str2, strlen(str2));
-
-/* Finalize -- this needs to be the last thing done before closing */
-mtar_finalize(&tar);
+/* Write strings to files `test1.txt` and `test2.txt`; a name over 100 characters
+ * gives MTAR_EFAILURE (CVE-2026-71267) */
+if ( mtar_write_file_header(&tar, "test1.txt", strlen(str1)) == MTAR_ESUCCESS &&
+     mtar_write_data(&tar, str1, strlen(str1)) == MTAR_ESUCCESS &&
+     mtar_write_file_header(&tar, "test2.txt", strlen(str2)) == MTAR_ESUCCESS &&
+     mtar_write_data(&tar, str2, strlen(str2)) == MTAR_ESUCCESS ) {
+  /* Finalize -- this needs to be the last thing done before closing */
+  mtar_finalize(&tar);
+}
 
 /* Close archive */
 mtar_close(&tar);

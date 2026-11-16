@@ -27,7 +27,8 @@ enum {
   MTAR_ESEEKFAIL    = -5,
   MTAR_EBADCHKSUM   = -6,
   MTAR_ENULLRECORD  = -7,
-  MTAR_ENOTFOUND    = -8
+  MTAR_ENOTFOUND    = -8,
+  MTAR_EBADHEADER   = -9
 };
 
 enum {
@@ -46,8 +47,9 @@ typedef struct {
   unsigned size;
   unsigned mtime;
   unsigned type;
-  char name[100];
-  char linkname[100];
+  /* 101 bytes: a full 100-byte field plus NUL (CVE-2026-43623, CVE-2026-55738). */
+  char name[101];
+  char linkname[101];
 } mtar_header_t;
 
 
