@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <limits.h>
 
 #include "microtar.h"
 
@@ -87,6 +88,32 @@ static int write_null_bytes(mtar_t *tar, int n) {
 }
 
 
+/* A header field may lack a NUL (CVE-2026-43623, CVE-2026-55738), so every
+ * field is read within its length. */
+/* Returns the number of digits read, or -1 on overflow. */
+static int parse_octal(const char *field, unsigned len, unsigned *value) {
+  unsigned i = 0;
+  int digits = 0;
+  *value = 0;
+  while (i < len && field[i] == ' ') {
+    i++;
+  }
+  for (; i < len && field[i] >= '0' && field[i] <= '7'; i++, digits++) {
+    if (*value > (UINT_MAX >> 3)) {
+      return -1;
+    }
+    *value = (*value << 3) | (unsigned) (field[i] - '0');
+  }
+  return digits;
+}
+
+
+static void copy_name(char *dst, const char *field) {
+  memcpy(dst, field, 100);
+  dst[100] = '\0';
+}
+
+
 static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   unsigned chksum1, chksum2;
 
@@ -97,19 +124,20 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
 
   /* Build and compare checksum */
   chksum1 = checksum(rh);
-  sscanf(rh->checksum, "%o", &chksum2);
-  if (chksum1 != chksum2) {
+  if (parse_octal(rh->checksum, sizeof(rh->checksum), &chksum2) <= 0 || chksum1 != chksum2) {
     return MTAR_EBADCHKSUM;
   }
 
   /* Load raw header into header */
-  sscanf(rh->mode, "%o", &h->mode);
-  sscanf(rh->owner, "%o", &h->owner);
-  sscanf(rh->size, "%o", &h->size);
-  sscanf(rh->mtime, "%o", &h->mtime);
+  if (parse_octal(rh->mode, sizeof(rh->mode), &h->mode) < 0 ||
+      parse_octal(rh->owner, sizeof(rh->owner), &h->owner) < 0 ||
+      parse_octal(rh->size, sizeof(rh->size), &h->size) < 0 ||
+      parse_octal(rh->mtime, sizeof(rh->mtime), &h->mtime) < 0) {
+    return MTAR_EBADHEADER;
+  }
   h->type = rh->type;
-  strcpy(h->name, rh->name);
-  strcpy(h->linkname, rh->linkname);
+  copy_name(h->name, rh->name);
+  copy_name(h->linkname, rh->linkname);
 
   return MTAR_ESUCCESS;
 }
@@ -148,6 +176,7 @@ const char* mtar_strerror(int err) {
     case MTAR_EBADCHKSUM   : return "bad checksum";
     case MTAR_ENULLRECORD  : return "null record";
     case MTAR_ENOTFOUND    : return "file not found";
+    case MTAR_EBADHEADER   : return "bad header";
   }
   return "unknown error";
 }
