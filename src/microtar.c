@@ -141,10 +141,26 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
 
 static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   unsigned chksum;
+  const char *base, *s, *split;
 
-  /* Reject names that do not fit the raw fields */
-  if (strlen(h->name) >= sizeof(rh->name) ||
-      strlen(h->linkname) >= sizeof(rh->linkname)) {
+  /* Split long names across the prefix and name fields */
+  base = h->name;
+  if (strlen(base) >= sizeof(rh->name)) {
+    split = NULL;
+    for (s = strchr(base, '/'); s != NULL; s = strchr(s + 1, '/')) {
+      if ((size_t)(s - base) < sizeof(rh->prefix) &&
+          strlen(s + 1) < sizeof(rh->name)) {
+        split = s + 1;
+      }
+    }
+    if (split == NULL) {
+      return MTAR_ENAMETOOLONG;
+    }
+    base = split;
+  }
+
+  /* Reject linknames that do not fit the raw field */
+  if (strlen(h->linkname) >= sizeof(rh->linkname)) {
     return MTAR_ENAMETOOLONG;
   }
 
@@ -155,7 +171,12 @@ static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   sprintf(rh->size, "%o", h->size);
   sprintf(rh->mtime, "%o", h->mtime);
   rh->type = h->type ? h->type : MTAR_TREG;
-  strcpy(rh->name, h->name);
+  strcpy(rh->name, base);
+  if (base != h->name) {
+    memcpy(rh->magic, "ustar", 5);
+    memcpy(rh->version, "00", 2);
+    memcpy(rh->prefix, h->name, base - h->name - 1);
+  }
   strcpy(rh->linkname, h->linkname);
 
   /* Calculate and write checksum */
