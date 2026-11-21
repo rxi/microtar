@@ -37,7 +37,14 @@ typedef struct {
   char checksum[8];
   char type;
   char linkname[100];
-  char _padding[255];
+  char magic[6];
+  char version[2];
+  char uname[32];
+  char gname[32];
+  char devmajor[8];
+  char devminor[8];
+  char prefix[155];
+  char _padding[12];
 } mtar_raw_header_t;
 
 
@@ -108,8 +115,25 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   sscanf(rh->size, "%o", &h->size);
   sscanf(rh->mtime, "%o", &h->mtime);
   h->type = rh->type;
-  strcpy(h->name, rh->name);
-  strcpy(h->linkname, rh->linkname);
+  /* Raw name fields may not be NUL terminated */
+  memcpy(h->name, rh->name, sizeof(rh->name));
+  h->name[sizeof(rh->name)] = '\0';
+  memcpy(h->linkname, rh->linkname, sizeof(rh->linkname));
+  h->linkname[sizeof(rh->linkname)] = '\0';
+  /* Prepend ustar prefix to name */
+  if (memcmp(rh->magic, "ustar", 5) == 0 && rh->prefix[0] != '\0') {
+    char name[MTAR_NAME_MAX];
+    int plen, nlen;
+    for (plen = 0; plen < (int)sizeof(rh->prefix) && rh->prefix[plen]; plen++);
+    nlen = strlen(h->name);
+    if (plen + 1 + nlen >= MTAR_NAME_MAX) {
+      return MTAR_ENAMETOOLONG;
+    }
+    memcpy(name, rh->prefix, plen);
+    name[plen] = '/';
+    memcpy(name + plen + 1, h->name, nlen + 1);
+    memcpy(h->name, name, plen + 1 + nlen + 1);
+  }
 
   return MTAR_ESUCCESS;
 }
@@ -117,6 +141,12 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
 
 static int header_to_raw(mtar_raw_header_t *rh, const mtar_header_t *h) {
   unsigned chksum;
+
+  /* Reject names that do not fit the raw fields */
+  if (strlen(h->name) >= sizeof(rh->name) ||
+      strlen(h->linkname) >= sizeof(rh->linkname)) {
+    return MTAR_ENAMETOOLONG;
+  }
 
   /* Load header into raw header */
   memset(rh, 0, sizeof(*rh));
@@ -148,6 +178,7 @@ const char* mtar_strerror(int err) {
     case MTAR_EBADCHKSUM   : return "bad checksum";
     case MTAR_ENULLRECORD  : return "null record";
     case MTAR_ENOTFOUND    : return "file not found";
+    case MTAR_ENAMETOOLONG : return "name too long";
   }
   return "unknown error";
 }
@@ -269,21 +300,65 @@ int mtar_find(mtar_t *tar, const char *name, mtar_header_t *h) {
 
 int mtar_read_header(mtar_t *tar, mtar_header_t *h) {
   int err;
+  unsigned size;
+  char longname[MTAR_NAME_MAX];
+  char longlink[MTAR_NAME_MAX];
+  char *longdst;
   mtar_raw_header_t rh;
-  /* Save header position */
-  tar->last_header = tar->pos;
-  /* Read raw header */
-  err = tread(tar, &rh, sizeof(rh));
-  if (err) {
-    return err;
+
+  longname[0] = '\0';
+  longlink[0] = '\0';
+  for (;;) {
+    /* Save header position */
+    tar->last_header = tar->pos;
+    /* Read raw header */
+    err = tread(tar, &rh, sizeof(rh));
+    if (err) {
+      return err;
+    }
+    /* Seek back to start of header */
+    err = mtar_seek(tar, tar->last_header);
+    if (err) {
+      return err;
+    }
+    /* Read GNU longname/longlink record */
+    if (rh.type == MTAR_TLONGNAME || rh.type == MTAR_TLONGLINK) {
+      longdst = (rh.type == MTAR_TLONGNAME) ? longname : longlink;
+      sscanf(rh.size, "%o", &size);
+      if (size == 0 || size >= MTAR_NAME_MAX) {
+        return MTAR_ENAMETOOLONG;
+      }
+      /* Read record data */
+      err = mtar_seek(tar, tar->last_header + sizeof(rh));
+      if (err) {
+        return err;
+      }
+      err = tread(tar, longdst, size);
+      if (err) {
+        return err;
+      }
+      longdst[size] = '\0';
+      /* Advance to next record */
+      err = mtar_seek(tar, tar->last_header + sizeof(rh) + round_up(size, 512));
+      if (err) {
+        return err;
+      }
+      continue;
+    }
+    /* Load raw header into header struct */
+    err = raw_to_header(h, &rh);
+    if (err) {
+      return err;
+    }
+    /* Apply pending long name records */
+    if (longname[0] != '\0') {
+      memcpy(h->name, longname, strlen(longname) + 1);
+    }
+    if (longlink[0] != '\0') {
+      memcpy(h->linkname, longlink, strlen(longlink) + 1);
+    }
+    return MTAR_ESUCCESS;
   }
-  /* Seek back to start of header */
-  err = mtar_seek(tar, tar->last_header);
-  if (err) {
-    return err;
-  }
-  /* Load raw header into header struct and return */
-  return raw_to_header(h, &rh);
 }
 
 
@@ -321,9 +396,13 @@ int mtar_read_data(mtar_t *tar, void *ptr, unsigned size) {
 
 
 int mtar_write_header(mtar_t *tar, const mtar_header_t *h) {
+  int err;
   mtar_raw_header_t rh;
   /* Build raw header and write */
-  header_to_raw(&rh, h);
+  err = header_to_raw(&rh, h);
+  if (err) {
+    return err;
+  }
   tar->remaining_data = h->size;
   return twrite(tar, &rh, sizeof(rh));
 }
@@ -333,6 +412,9 @@ int mtar_write_file_header(mtar_t *tar, const char *name, unsigned size) {
   mtar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
+  if (strlen(name) >= sizeof(h.name)) {
+    return MTAR_ENAMETOOLONG;
+  }
   strcpy(h.name, name);
   h.size = size;
   h.type = MTAR_TREG;
@@ -346,6 +428,9 @@ int mtar_write_dir_header(mtar_t *tar, const char *name) {
   mtar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
+  if (strlen(name) >= sizeof(h.name)) {
+    return MTAR_ENAMETOOLONG;
+  }
   strcpy(h.name, name);
   h.type = MTAR_TDIR;
   h.mode = 0775;

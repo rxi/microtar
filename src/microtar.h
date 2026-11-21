@@ -27,7 +27,8 @@ enum {
   MTAR_ESEEKFAIL    = -5,
   MTAR_EBADCHKSUM   = -6,
   MTAR_ENULLRECORD  = -7,
-  MTAR_ENOTFOUND    = -8
+  MTAR_ENOTFOUND    = -8,
+  MTAR_ENAMETOOLONG = -9
 };
 
 enum {
@@ -37,8 +38,13 @@ enum {
   MTAR_TCHR   = '3',
   MTAR_TBLK   = '4',
   MTAR_TDIR   = '5',
-  MTAR_TFIFO  = '6'
+  MTAR_TFIFO  = '6',
+  MTAR_TLONGNAME = 'L',  /* GNU longname */
+  MTAR_TLONGLINK = 'K'   /* GNU longlink */
 };
+
+/* Keep mtar_header_t 1024 bytes: 5 unsigneds + 2 * MTAR_NAME_MAX */
+#define MTAR_NAME_MAX 502
 
 typedef struct {
   unsigned mode;
@@ -46,8 +52,8 @@ typedef struct {
   unsigned size;
   unsigned mtime;
   unsigned type;
-  char name[100];
-  char linkname[100];
+  char name[MTAR_NAME_MAX];
+  char linkname[MTAR_NAME_MAX];
 } mtar_header_t;
 
 
